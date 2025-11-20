@@ -33,8 +33,7 @@ export default function RootLayout() {
           }}
         />
 
-        {/* Agenda (comentada) */}
-        {
+        {/* Agenda */}
         <Tabs.Screen
           name="agenda"
           options={{
@@ -44,10 +43,8 @@ export default function RootLayout() {
             ),
           }}
         />
-        }
 
-        {/* Clientes (comentada) */}
-        {
+        {/* Clientes */}
         <Tabs.Screen
           name="clients"
           options={{
@@ -57,10 +54,8 @@ export default function RootLayout() {
             ),
           }}
         />
-        }
 
-        {/* Servicios (comentada) */}
-        {
+        {/* Servicios */}
         <Tabs.Screen
           name="services"
           options={{
@@ -70,10 +65,8 @@ export default function RootLayout() {
             ),
           }}
         />
-        }
 
-        {/* Reportes (comentada) */}
-        {
+        {/* Reportes */}
         <Tabs.Screen
           name="reports"
           options={{
@@ -83,7 +76,25 @@ export default function RootLayout() {
             ),
           }}
         />
-        }
+
+        {/* Settings con ícono de tuerca */}
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: 'Settings', // o 'Ajustes'
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="settings-outline" size={size} color={color} />
+            ),
+          }}
+        />
+
+        {/* Ocultar appointments del tab bar, pero mantener la ruta */}
+        <Tabs.Screen
+          name="appointments"
+          options={{
+            href: null, // esto lo saca del tab bar
+          }}
+        />
       </Tabs>
     </SafeAreaProvider>
   )

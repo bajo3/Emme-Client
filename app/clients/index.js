@@ -167,7 +167,8 @@ export default function ClientsScreen() {
   }
 
   return (
-    <Screen>
+    // 👇 IMPORTANTE: scroll={false} para que Screen NO meta un ScrollView
+    <Screen scroll={false}>
       <SectionTitle
         right={
           <TouchableOpacity onPress={() => router.push('/clients/new')}>

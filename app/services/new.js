@@ -8,6 +8,7 @@ import {
   Switch,
   Alert,
   View,
+  Platform,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import Screen from '../../components/ui/Screen'
@@ -67,12 +68,18 @@ export default function NewServiceScreen() {
       return
     }
 
-    Alert.alert('OK', 'Servicio creado.', [
-      {
-        text: 'Volver a la lista',
-        onPress: () => router.back(),
-      },
-    ])
+    // ✅ Mensaje + volver siempre a la lista de servicios
+    if (Platform.OS === 'web') {
+      Alert.alert('OK', 'Servicio creado.')
+      router.replace('/services')
+    } else {
+      Alert.alert('OK', 'Servicio creado.', [
+        {
+          text: 'Volver a la lista',
+          onPress: () => router.replace('/services'),
+        },
+      ])
+    }
   }
 
   return (
@@ -99,7 +106,17 @@ export default function NewServiceScreen() {
 
         <Spacer size={8} />
 
-        <Text style={styles.label}>Duración (min, opcional)</Text>
+        <Text style={styles.label}>Color (opcional)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="#8E44AD"
+          value={color}
+          onChangeText={setColor}
+        />
+
+        <Spacer size={8} />
+
+        <Text style={styles.label}>Duración (minutos, opcional)</Text>
         <TextInput
           style={styles.input}
           placeholder="Ej: 60"
@@ -121,18 +138,8 @@ export default function NewServiceScreen() {
 
         <Spacer size={8} />
 
-        <Text style={styles.label}>Color (hex, opcional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="#8E44AD"
-          value={color}
-          onChangeText={setColor}
-        />
-
-        <Spacer size={8} />
-
         <View style={styles.row}>
-          <Text style={styles.labelSwitch}>Activo</Text>
+          <Text style={styles.label}>Activo</Text>
           <Switch value={isActive} onValueChange={setIsActive} />
         </View>
 
@@ -151,13 +158,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#424242',
     marginBottom: 4,
-  },
-  labelSwitch: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#424242',
   },
   input: {
     borderWidth: 1,

@@ -3,14 +3,30 @@ import React from 'react'
 import { View, StyleSheet, ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-export default function Screen({ children, scroll = true, style }) {
-  const Container = scroll ? ScrollView : View
+export default function Screen({
+  children,
+  scroll = true,
+  style,
+  contentContainerStyle,
+}) {
+  if (scroll) {
+    return (
+      <SafeAreaView style={[styles.safe, style]}>
+        <ScrollView
+          contentContainerStyle={[styles.container, contentContainerStyle]}
+        >
+          {children}
+        </ScrollView>
+      </SafeAreaView>
+    )
+  }
 
+  // 👇 Versión sin ScrollView (para usar con FlatList / SectionList)
   return (
-    <SafeAreaView style={styles.safe}>
-      <Container contentContainerStyle={[styles.container, style]}>
+    <SafeAreaView style={[styles.safe, style]}>
+      <View style={[styles.container, contentContainerStyle]}>
         {children}
-      </Container>
+      </View>
     </SafeAreaView>
   )
 }
@@ -21,7 +37,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
   container: {
-    flexGrow: 1,
+    flex: 1,
     padding: 16,
   },
 })

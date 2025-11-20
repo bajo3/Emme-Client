@@ -1,156 +1,247 @@
-import React, { useEffect, useState } from 'react'
+// app/agenda/AgendaDay.js
+import React, { useEffect, useState, useMemo } from 'react'
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
-  ActivityIndicator,
   FlatList,
+  ActivityIndicator,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { supabase } from '../../../lib/supabase'
 import Card from '../../../components/ui/Card'
 import Spacer from '../../../components/ui/Spacer'
-import { supabase } from '../../../lib/supabase'
+import Badge from '../../../components/ui/BadgeStatus'
+import { COLORS, SPACING } from '../../../components/theme'
 
-function formatTime(t) {
-  if (!t) return ''
-  return t.slice(0, 5)
-}
-
-function getStatusColor(status) {
-  switch (status) {
-    case 'confirmed':
-      return '#0277BD'
-    case 'done':
-      return '#2E7D32'
-    case 'cancelled':
-      return '#E53935'
-    default:
-      return '#FF8F00' // pending
+function toISODate(date) {
+  const d = date instanceof Date ? date : new Date(date)
+  if (isNaN(d.getTime())) {
+    // si viene algo raro, volvemos a hoy
+    const today = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
   }
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-function getStatusLabel(status) {
-  switch (status) {
-    case 'confirmed':
-      return 'Confirmado'
-    case 'done':
-      return 'Realizado'
-    case 'cancelled':
-      return 'Cancelado'
-    default:
-      return 'Pendiente'
-  }
+const STATUS_LABELS = {
+  pending: 'Pendiente',
+  confirmed: 'Confirmado',
+  done: 'Realizado',
+  cancelled: 'Cancelado',
 }
 
-export default function AgendaDay() {
+const STATUS_COLORS = {
+  pending: '#F5A623',
+  confirmed: '#2E86DE',
+  done: '#2ECC71',
+  cancelled: '#E74C3C',
+}
+
+export default function AgendaDay({ date }) {
   const router = useRouter()
-  const today = new Date().toISOString().slice(0, 10)
+  // 👇 si no viene date, usamos hoy
+  const baseDate =
+    date && !isNaN(new Date(date).getTime()) ? new Date(date) : new Date()
 
-  const [date, setDate] = useState(today)
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [appointments, setAppointments] = useState([])
+  const [filterStatus, setFilterStatus] = useState('all') // all | pending | confirmed | done
 
-  const loadAppointments = async () => {
-    setLoading(true)
+  const isoDate = toISODate(baseDate)
+
+  const loadAppointments = async (opts = { showLoader: true }) => {
+    if (opts.showLoader) setLoading(true)
 
     const { data, error } = await supabase
       .from('appointments')
-      .select(`
+      .select(
+        `
+        id,
+        date,
+        start_time,
+        end_time,
+        status,
+        service_name,
+        clients (
           id,
-          date,
-          start_time,
-          end_time,
-          status,
-          service_name,
-          clients (
-            id,
-            name,
-            phone
-          )
-      `)
-      .eq('date', date)
+          name,
+          phone
+        )
+      `
+      )
+      .eq('date', isoDate)
       .order('start_time', { ascending: true })
 
     if (error) {
       console.error('Error cargando turnos del día', error)
       setAppointments([])
-      setLoading(false)
-      return
+    } else {
+      setAppointments(data || [])
     }
 
-    setAppointments(data || [])
     setLoading(false)
+    setRefreshing(false)
   }
 
   useEffect(() => {
-    loadAppointments()
-  }, [date])
+    loadAppointments({ showLoader: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isoDate])
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => router.push(`/appointments/${item.id}`)}
-      style={{ marginBottom: 10 }}
-    >
-      <Card style={styles.card}>
-        <View style={styles.timeRow}>
-          <Text style={styles.timeText}>
-            {formatTime(item.start_time)}
-            {item.end_time ? ` - ${formatTime(item.end_time)}` : ''}
-          </Text>
+  const onRefresh = () => {
+    setRefreshing(true)
+    loadAppointments({ showLoader: false })
+  }
 
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(item.status) },
-            ]}
-          >
-            <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
+  const filteredAppointments = useMemo(() => {
+    if (filterStatus === 'all') return appointments
+    return appointments.filter((a) => a.status === filterStatus)
+  }, [appointments, filterStatus])
+
+  const renderStatusBadge = (status) => {
+    const label = STATUS_LABELS[status] || status
+
+    let variant = 'neutral'
+    if (status === 'pending') variant = 'warning'
+    if (status === 'confirmed') variant = 'info'
+    if (status === 'done') variant = 'success'
+    if (status === 'cancelled') variant = 'danger'
+
+    return <Badge variant={variant}>{label}</Badge>
+  }
+
+  const renderItem = ({ item }) => {
+    const start = item.start_time?.slice(0, 5) || '--:--'
+    const end = item.end_time?.slice(0, 5) || null
+    const clientName = item.clients?.name || 'Sin cliente'
+    const phone = item.clients?.phone || ''
+    const serviceName = item.service_name || 'Sin servicio'
+    const statusColor = STATUS_COLORS[item.status] || '#BDBDBD'
+
+    return (
+      <TouchableOpacity
+        onPress={() => router.push(`/appointments/${item.id}`)}
+        activeOpacity={0.9}
+      >
+        <View style={styles.itemRow}>
+          {/* Columna de hora + puntito */}
+          <View style={styles.timeColumn}>
+            <Text style={styles.timeText}>{start}</Text>
+            {end && <Text style={styles.timeEndText}>{end}</Text>}
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <View style={styles.verticalLine} />
           </View>
+
+          {/* Card con info */}
+          <Card style={styles.itemCard}>
+            <View style={styles.itemHeader}>
+              <Text style={styles.clientName}>{clientName}</Text>
+              {renderStatusBadge(item.status)}
+            </View>
+
+            <Spacer size={4} />
+
+            <Text style={styles.serviceName}>{serviceName}</Text>
+
+            {phone ? (
+              <Text style={styles.phoneText}>{phone}</Text>
+            ) : null}
+          </Card>
         </View>
+      </TouchableOpacity>
+    )
+  }
 
-        <Spacer size={6} />
+  const renderEmpty = () => {
+    if (loading) return null
 
-        <Text style={styles.clientText}>
-          {item.clients?.name || 'Cliente sin nombre'}
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No hay turnos para este día.</Text>
+        <Spacer size={4} />
+        <Text style={styles.emptySubText}>
+          Creá un turno desde la ficha de un cliente.
         </Text>
+      </View>
+    )
+  }
 
-        <Spacer size={2} />
-
-        <Text style={styles.serviceText}>{item.service_name}</Text>
-      </Card>
-    </TouchableOpacity>
-  )
+  const summary = useMemo(() => {
+    const total = appointments.length
+    const pending = appointments.filter((a) => a.status === 'pending').length
+    const confirmed = appointments.filter((a) => a.status === 'confirmed').length
+    const done = appointments.filter((a) => a.status === 'done').length
+    return { total, pending, confirmed, done }
+  }, [appointments])
 
   return (
     <View style={styles.container}>
-      {/* Selector de Fecha */}
-      <Text style={styles.label}>Fecha</Text>
-      <TextInput
-        style={styles.input}
-        value={date}
-        onChangeText={setDate}
-        placeholder="YYYY-MM-DD"
-      />
+      {/* Resumen del día */}
+      <View style={styles.summaryRow}>
+        <Text style={styles.summaryText}>Turnos: {summary.total}</Text>
+        <Text style={styles.summarySubText}>
+          Pend: {summary.pending} · Conf: {summary.confirmed} · Real: {summary.done}
+        </Text>
+      </View>
 
-      <Spacer size={10} />
+      <Spacer size={8} />
 
-      {/* Contenido */}
-      {loading ? (
-        <>
+      {/* Filtros */}
+      <View style={styles.filterRow}>
+        {[
+          { key: 'all', label: 'Todos' },
+          { key: 'pending', label: 'Pendientes' },
+          { key: 'confirmed', label: 'Confirmados' },
+          { key: 'done', label: 'Realizados' },
+        ].map((f) => {
+          const isActive = filterStatus === f.key
+          return (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
+              onPress={() => setFilterStatus(f.key)}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  isActive && styles.filterChipTextActive,
+                ]}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
+      </View>
+
+      <Spacer size={8} />
+
+      {loading && !refreshing ? (
+        <View style={styles.loadingContainer}>
           <ActivityIndicator />
-          <Spacer />
+          <Spacer size={4} />
           <Text>Cargando turnos...</Text>
-        </>
-      ) : appointments.length === 0 ? (
-        <Text style={styles.noAppts}>No hay turnos en esta fecha.</Text>
+        </View>
       ) : (
         <FlatList
-          data={appointments}
+          data={filteredAppointments}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 50 }}
+          ListEmptyComponent={renderEmpty}
+          contentContainerStyle={
+            filteredAppointments.length === 0 && !loading
+              ? { flex: 1, paddingHorizontal: 8 }
+              : { paddingBottom: SPACING?.lg || 16, paddingHorizontal: 8 }
+          }
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         />
       )}
     </View>
@@ -159,57 +250,116 @@ export default function AgendaDay() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 8,
+    flex: 1,
   },
-  label: {
-    fontSize: 13,
-    color: '#616161',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 8,
-    padding: 8,
-    backgroundColor: '#FAFAFA',
-    fontSize: 14,
-  },
-  card: {
-    padding: 14,
-    borderRadius: 12,
-  },
-  timeRow: {
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingHorizontal: 4,
   },
-  timeText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#212121',
-  },
-  clientText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#3E3E3E',
-  },
-  serviceText: {
+  summaryText: {
     fontSize: 14,
-    color: '#616161',
+    fontWeight: '600',
   },
-  statusBadge: {
+  summarySubText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  filterChip: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FFFFFF',
   },
-  statusText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+  filterChipActive: {
+    backgroundColor: COLORS?.primary || '#3F51B5',
+    borderColor: COLORS?.primary || '#3F51B5',
+  },
+  filterChipText: {
     fontSize: 12,
+    color: '#555',
   },
-  noAppts: {
+  filterChipTextActive: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  timeColumn: {
+    width: 60,
+    alignItems: 'center',
+    paddingTop: 6,
+  },
+  timeText: {
     fontSize: 14,
-    color: '#757575',
+    fontWeight: '600',
+  },
+  timeEndText: {
+    fontSize: 11,
+    color: '#666',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  verticalLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#E0E0E0',
+    marginTop: 2,
+  },
+  itemCard: {
+    flex: 1,
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  clientName: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  serviceName: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  phoneText: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#777',
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  emptyText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  emptySubText: {
+    fontSize: 12,
+    color: '#666',
   },
 })

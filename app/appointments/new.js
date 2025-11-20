@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import Screen from '../../components/ui/Screen'
 import SectionTitle from '../../components/ui/SectionTitle'
@@ -26,6 +27,8 @@ const STATUSES = [
   { value: 'cancelled', label: 'Cancelado' },
 ]
 
+const isNative = Platform.OS === 'ios' || Platform.OS === 'android'
+
 function todayISO() {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
@@ -34,8 +37,35 @@ function todayISO() {
 
 const validateTime = (value) => {
   if (!value) return false
-  const regex = /^([01]\d|2[0-3]):[0-5]\d$/
+  const regex = /^([01]\d|2[0-3]):[0-5]\d$/ // HH:MM 24h
   return regex.test(value)
+}
+
+function parseISODateToJS(iso) {
+  if (!iso) return new Date()
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return new Date()
+  return new Date(y, m - 1, d, 12, 0, 0)
+}
+
+function formatDate(d) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function timeStringToDate(str) {
+  const base = new Date()
+  if (validateTime(str)) {
+    const [h, m] = str.split(':').map(Number)
+    base.setHours(h, m, 0, 0)
+  } else {
+    base.setHours(9, 0, 0, 0)
+  }
+  return base
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
 }
 
 export default function NewAppointmentScreen() {
@@ -53,6 +83,12 @@ export default function NewAppointmentScreen() {
   const [servicesLoading, setServicesLoading] = useState(false)
   const [selectedServiceId, setSelectedServiceId] = useState(null)
 
+  // pickers nativos
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showStartPicker, setShowStartPicker] = useState(false)
+  const [showEndPicker, setShowEndPicker] = useState(false)
+
+  // Cargar servicios
   useEffect(() => {
     const loadServices = async () => {
       setServicesLoading(true)
@@ -131,16 +167,13 @@ export default function NewAppointmentScreen() {
 
     if (error) {
       console.error('Error creando turno', error)
-
       Alert.alert(
         'Error creando turno',
         `${error.message || 'Sin mensaje'}\n\n${error.details || ''}`
       )
-
       return
     }
 
-    // Éxito: comportamiento distinto en web vs nativo
     if (Platform.OS === 'web') {
       Alert.alert('OK', 'Turno creado correctamente.')
       router.replace(`/clients/${clientId}`)
@@ -159,38 +192,124 @@ export default function NewAppointmentScreen() {
       <SectionTitle>Nuevo turno</SectionTitle>
       <ScrollView>
         <Card>
+          {/* FECHA */}
           <Text style={styles.label}>Fecha *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="YYYY-MM-DD"
-            value={date}
-            onChangeText={setDate}
-          />
+          {isNative ? (
+            <>
+              <TouchableOpacity
+                style={styles.input}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={styles.inputText}>{date}</Text>
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={parseISODateToJS(date)}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selected) => {
+                    setShowDatePicker(false)
+                    if (selected) {
+                      setDate(formatDate(selected))
+                    }
+                  }}
+                />
+              )}
+            </>
+          ) : (
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              value={date}
+              onChangeText={setDate}
+            />
+          )}
 
           <Spacer size={12} />
 
+          {/* HORA INICIO */}
           <Text style={styles.label}>Hora inicio *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="HH:MM"
-            value={startTime}
-            onChangeText={setStartTime}
-            keyboardType="numeric"
-          />
+          {isNative ? (
+            <>
+              <TouchableOpacity
+                style={styles.input}
+                onPress={() => setShowStartPicker(true)}
+              >
+                <Text style={styles.inputText}>
+                  {startTime || 'Seleccionar hora'}
+                </Text>
+              </TouchableOpacity>
+              {showStartPicker && (
+                <DateTimePicker
+                  value={timeStringToDate(startTime)}
+                  mode="time"
+                  is24Hour
+                  display="default"
+                  onChange={(event, selected) => {
+                    setShowStartPicker(false)
+                    if (selected) {
+                      const h = selected.getHours()
+                      const m = selected.getMinutes()
+                      setStartTime(`${pad2(h)}:${pad2(m)}`)
+                    }
+                  }}
+                />
+              )}
+            </>
+          ) : (
+            <TextInput
+              style={styles.input}
+              placeholder="HH:MM"
+              value={startTime}
+              onChangeText={setStartTime}
+              keyboardType="numeric"
+            />
+          )}
 
           <Spacer size={12} />
 
+          {/* HORA FIN */}
           <Text style={styles.label}>Hora fin (opcional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="HH:MM"
-            value={endTime}
-            onChangeText={setEndTime}
-            keyboardType="numeric"
-          />
+          {isNative ? (
+            <>
+              <TouchableOpacity
+                style={styles.input}
+                onPress={() => setShowEndPicker(true)}
+              >
+                <Text style={styles.inputText}>
+                  {endTime || 'Seleccionar hora'}
+                </Text>
+              </TouchableOpacity>
+              {showEndPicker && (
+                <DateTimePicker
+                  value={timeStringToDate(endTime)}
+                  mode="time"
+                  is24Hour
+                  display="default"
+                  onChange={(event, selected) => {
+                    setShowEndPicker(false)
+                    if (selected) {
+                      const h = selected.getHours()
+                      const m = selected.getMinutes()
+                      setEndTime(`${pad2(h)}:${pad2(m)}`)
+                    }
+                  }}
+                />
+              )}
+            </>
+          ) : (
+            <TextInput
+              style={styles.input}
+              placeholder="HH:MM"
+              value={endTime}
+              onChangeText={setEndTime}
+              keyboardType="numeric"
+            />
+          )}
 
           <Spacer size={16} />
 
+          {/* SERVICIO */}
           <Text style={styles.label}>Servicio *</Text>
           {servicesLoading ? (
             <ActivityIndicator />
@@ -230,6 +349,7 @@ export default function NewAppointmentScreen() {
 
           <Spacer size={16} />
 
+          {/* ESTADO */}
           <Text style={styles.label}>Estado</Text>
           <View style={styles.statusRow}>
             {STATUSES.map((s) => (
@@ -255,6 +375,7 @@ export default function NewAppointmentScreen() {
 
           <Spacer size={16} />
 
+          {/* NOTAS */}
           <Text style={styles.label}>Notas</Text>
           <TextInput
             style={[styles.input, styles.textarea]}
@@ -292,6 +413,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 14,
     backgroundColor: '#FAFAFA',
+    justifyContent: 'center',
+  },
+  inputText: {
+    fontSize: 14,
+    color: '#212121',
   },
   textarea: {
     height: 80,
