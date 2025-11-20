@@ -314,12 +314,13 @@ export default function AgendaMonth() {
 
       {/* Nombres de días */}
       <View style={styles.weekdayRow}>
-        {WEEKDAY_LABELS.map((label) => (
-          <Text key={label} style={styles.weekdayLabel}>
+        {WEEKDAY_LABELS.map((label, index) => (
+          <Text key={`${label}-${index}`} style={styles.weekdayLabel}>
             {label}
           </Text>
         ))}
       </View>
+
 
       {/* Calendario */}
       <View style={styles.calendarGrid}>

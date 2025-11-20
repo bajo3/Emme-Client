@@ -1,11 +1,11 @@
-//app/agenda/index.js
+// app/agenda/index.js
 import React, { useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import Screen from '../../components/ui/Screen'
 import SectionTitle from '../../components/ui/SectionTitle'
 import Spacer from '../../components/ui/Spacer'
 
-// 📌 Importamos las 3 vistas (las creamos después)
+// Importamos las 3 vistas
 import AgendaDay from './views/AgendaDay'
 import AgendaWeek from './views/AgendaWeek'
 import AgendaMonth from './views/AgendaMonth'
@@ -14,7 +14,7 @@ export default function AgendaScreen() {
   const [tab, setTab] = useState('day')
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <SectionTitle>Agenda</SectionTitle>
 
       {/* Tabs internas */}
@@ -23,21 +23,27 @@ export default function AgendaScreen() {
           onPress={() => setTab('day')}
           style={[styles.tabBtn, tab === 'day' && styles.tabActive]}
         >
-          <Text style={[styles.tabText, tab === 'day' && styles.tabTextActive]}>Día</Text>
+          <Text style={[styles.tabText, tab === 'day' && styles.tabTextActive]}>
+            Día
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => setTab('week')}
           style={[styles.tabBtn, tab === 'week' && styles.tabActive]}
         >
-          <Text style={[styles.tabText, tab === 'week' && styles.tabTextActive]}>Semana</Text>
+          <Text style={[styles.tabText, tab === 'week' && styles.tabTextActive]}>
+            Semana
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => setTab('month')}
           style={[styles.tabBtn, tab === 'month' && styles.tabActive]}
         >
-          <Text style={[styles.tabText, tab === 'month' && styles.tabTextActive]}>Mes</Text>
+          <Text style={[styles.tabText, tab === 'month' && styles.tabTextActive]}>
+            Mes
+          </Text>
         </TouchableOpacity>
       </View>
 
