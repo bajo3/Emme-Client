@@ -34,7 +34,7 @@ export default function RootLayout() {
         />
 
         {/* Agenda (comentada) */}
-        {/*
+        {
         <Tabs.Screen
           name="agenda"
           options={{
@@ -44,10 +44,10 @@ export default function RootLayout() {
             ),
           }}
         />
-        */}
+        }
 
         {/* Clientes (comentada) */}
-        {/*
+        {
         <Tabs.Screen
           name="clients"
           options={{
@@ -57,10 +57,10 @@ export default function RootLayout() {
             ),
           }}
         />
-        */}
+        }
 
         {/* Servicios (comentada) */}
-        {/*
+        {
         <Tabs.Screen
           name="services"
           options={{
@@ -70,10 +70,10 @@ export default function RootLayout() {
             ),
           }}
         />
-        */}
+        }
 
         {/* Reportes (comentada) */}
-        {/*
+        {
         <Tabs.Screen
           name="reports"
           options={{
@@ -83,7 +83,7 @@ export default function RootLayout() {
             ),
           }}
         />
-        */}
+        }
       </Tabs>
     </SafeAreaProvider>
   )
