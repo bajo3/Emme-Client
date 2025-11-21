@@ -1,365 +1,317 @@
-// app/agenda/AgendaDay.js
-import React, { useEffect, useState, useMemo } from 'react'
+// app/agenda/views/AgendaDay.js
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
-  ActivityIndicator,
+  ScrollView,
   TouchableOpacity,
-  RefreshControl,
-} from 'react-native'
-import { useRouter } from 'expo-router'
-import { supabase } from '../../../lib/supabase'
-import Card from '../../../components/ui/Card'
-import Spacer from '../../../components/ui/Spacer'
-import Badge from '../../../components/ui/BadgeStatus'
-import { COLORS, SPACING } from '../../../components/theme'
+  ActivityIndicator,
+} from 'react-native';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import Card from '../../../components/ui/Card';
+import { supabase } from '../../../lib/supabase';
 
-function toISODate(date) {
-  const d = date instanceof Date ? date : new Date(date)
-  if (isNaN(d.getTime())) {
-    // si viene algo raro, volvemos a hoy
-    const today = new Date()
-    const pad = (n) => String(n).padStart(2, '0')
-    return `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
-  }
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+const ACTIVE_STATUSES = ['pending', 'confirmed'];
+const ARCHIVED_STATUSES = ['done', 'cancelled'];
 
-const STATUS_LABELS = {
-  pending: 'Pendiente',
-  confirmed: 'Confirmado',
-  done: 'Realizado',
-  cancelled: 'Cancelado',
-}
+export default function AgendaDay() {
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState('active'); // 'active' | 'archived'
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isDatePickerVisible, setDatePickerVisible] = useState(false);
 
-const STATUS_COLORS = {
-  pending: '#F5A623',
-  confirmed: '#2E86DE',
-  done: '#2ECC71',
-  cancelled: '#E74C3C',
-}
-
-export default function AgendaDay({ date }) {
-  const router = useRouter()
-  // 👇 si no viene date, usamos hoy
-  const baseDate =
-    date && !isNaN(new Date(date).getTime()) ? new Date(date) : new Date()
-
-  const [loading, setLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [appointments, setAppointments] = useState([])
-  const [filterStatus, setFilterStatus] = useState('all') // all | pending | confirmed | done
-
-  const isoDate = toISODate(baseDate)
-
-  const loadAppointments = async (opts = { showLoader: true }) => {
-    if (opts.showLoader) setLoading(true)
-
-    const { data, error } = await supabase
-      .from('appointments')
-      .select(
-        `
-        id,
-        date,
-        start_time,
-        end_time,
-        status,
-        service_name,
-        clients (
-          id,
-          name,
-          phone
-        )
-      `
-      )
-      .eq('date', isoDate)
-      .order('start_time', { ascending: true })
-
-    if (error) {
-      console.error('Error cargando turnos del día', error)
-      setAppointments([])
-    } else {
-      setAppointments(data || [])
-    }
-
-    setLoading(false)
-    setRefreshing(false)
-  }
-
-  useEffect(() => {
-    loadAppointments({ showLoader: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isoDate])
-
-  const onRefresh = () => {
-    setRefreshing(true)
-    loadAppointments({ showLoader: false })
-  }
+  const formattedDate = useMemo(
+    () =>
+      format(selectedDate, "EEEE d 'de' MMMM", {
+        locale: es,
+      }),
+    [selectedDate],
+  );
 
   const filteredAppointments = useMemo(() => {
-    if (filterStatus === 'all') return appointments
-    return appointments.filter((a) => a.status === filterStatus)
-  }, [appointments, filterStatus])
+    const statuses =
+      viewMode === 'active' ? ACTIVE_STATUSES : ARCHIVED_STATUSES;
 
-  const renderStatusBadge = (status) => {
-    const label = STATUS_LABELS[status] || status
+    return appointments.filter((appt) => statuses.includes(appt.status));
+  }, [appointments, viewMode]);
 
-    let variant = 'neutral'
-    if (status === 'pending') variant = 'warning'
-    if (status === 'confirmed') variant = 'info'
-    if (status === 'done') variant = 'success'
-    if (status === 'cancelled') variant = 'danger'
+  const fetchDayAppointments = useCallback(async () => {
+    try {
+      setLoading(true);
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
-    return <Badge variant={variant}>{label}</Badge>
-  }
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(
+          `
+          id,
+          date,
+          start_time,
+          end_time,
+          status,
+          notes,
+          clients (
+            id,
+            name,
+            phone,
+            instagram
+          )
+        `,
+        )
+        .eq('date', dateStr)
+        .order('start_time', { ascending: true });
 
-  const renderItem = ({ item }) => {
-    const start = item.start_time?.slice(0, 5) || '--:--'
-    const end = item.end_time?.slice(0, 5) || null
-    const clientName = item.clients?.name || 'Sin cliente'
-    const phone = item.clients?.phone || ''
-    const serviceName = item.service_name || 'Sin servicio'
-    const statusColor = STATUS_COLORS[item.status] || '#BDBDBD'
+      if (error) {
+        console.log('Error cargando turnos día:', error.message);
+        return;
+      }
 
-    return (
-      <TouchableOpacity
-        onPress={() => router.push(`/appointments/${item.id}`)}
-        activeOpacity={0.9}
-      >
-        <View style={styles.itemRow}>
-          {/* Columna de hora + puntito */}
-          <View style={styles.timeColumn}>
-            <Text style={styles.timeText}>{start}</Text>
-            {end && <Text style={styles.timeEndText}>{end}</Text>}
-            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <View style={styles.verticalLine} />
-          </View>
+      setAppointments(data || []);
+    } catch (e) {
+      console.log('Error inesperado:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDate]);
 
-          {/* Card con info */}
-          <Card style={styles.itemCard}>
-            <View style={styles.itemHeader}>
-              <Text style={styles.clientName}>{clientName}</Text>
-              {renderStatusBadge(item.status)}
-            </View>
+  useEffect(() => {
+    fetchDayAppointments();
+  }, [fetchDayAppointments]);
 
-            <Spacer size={4} />
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: newStatus })
+        .eq('id', id);
 
-            <Text style={styles.serviceName}>{serviceName}</Text>
+      if (error) {
+        console.log('Error actualizando estado:', error.message);
+        return;
+      }
 
-            {phone ? (
-              <Text style={styles.phoneText}>{phone}</Text>
-            ) : null}
-          </Card>
-        </View>
-      </TouchableOpacity>
-    )
-  }
+      setAppointments((prev) =>
+        prev.map((appt) =>
+          appt.id === id ? { ...appt, status: newStatus } : appt,
+        ),
+      );
+    } catch (e) {
+      console.log('Error inesperado al cambiar estado:', e);
+    }
+  };
 
-  const renderEmpty = () => {
-    if (loading) return null
+  const openDatePicker = () => setDatePickerVisible(true);
+  const closeDatePicker = () => setDatePickerVisible(false);
 
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No hay turnos para este día.</Text>
-        <Spacer size={4} />
-        <Text style={styles.emptySubText}>
-          Creá un turno desde la ficha de un cliente.
-        </Text>
-      </View>
-    )
-  }
-
-  const summary = useMemo(() => {
-    const total = appointments.length
-    const pending = appointments.filter((a) => a.status === 'pending').length
-    const confirmed = appointments.filter((a) => a.status === 'confirmed').length
-    const done = appointments.filter((a) => a.status === 'done').length
-    return { total, pending, confirmed, done }
-  }, [appointments])
+  const handleConfirmDate = (date) => {
+    closeDatePicker();
+    setSelectedDate(date);
+  };
 
   return (
     <View style={styles.container}>
-      {/* Resumen del día */}
-      <View style={styles.summaryRow}>
-        <Text style={styles.summaryText}>Turnos: {summary.total}</Text>
-        <Text style={styles.summarySubText}>
-          Pend: {summary.pending} · Conf: {summary.confirmed} · Real: {summary.done}
-        </Text>
-      </View>
+      {/* Selector de fecha (abre calendario) */}
+      <TouchableOpacity style={styles.datePill} onPress={openDatePicker}>
+        <Text style={styles.datePillText}>{formattedDate}</Text>
+      </TouchableOpacity>
 
-      <Spacer size={8} />
+      <DateTimePickerModal
+        isVisible={isDatePickerVisible}
+        mode="date"
+        date={selectedDate}
+        onConfirm={handleConfirmDate}
+        onCancel={closeDatePicker}
+      />
 
-      {/* Filtros */}
-      <View style={styles.filterRow}>
-        {[
-          { key: 'all', label: 'Todos' },
-          { key: 'pending', label: 'Pendientes' },
-          { key: 'confirmed', label: 'Confirmados' },
-          { key: 'done', label: 'Realizados' },
-        ].map((f) => {
-          const isActive = filterStatus === f.key
-          return (
-            <TouchableOpacity
-              key={f.key}
-              style={[styles.filterChip, isActive && styles.filterChipActive]}
-              onPress={() => setFilterStatus(f.key)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  isActive && styles.filterChipTextActive,
-                ]}
-              >
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          )
-        })}
-      </View>
-
-      <Spacer size={8} />
-
-      {loading && !refreshing ? (
-        <View style={styles.loadingContainer}>
+      {/* Lista de turnos */}
+      <View style={styles.listContainer}>
+        {loading ? (
           <ActivityIndicator />
-          <Spacer size={4} />
-          <Text>Cargando turnos...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredAppointments}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          ListEmptyComponent={renderEmpty}
-          contentContainerStyle={
-            filteredAppointments.length === 0 && !loading
-              ? { flex: 1, paddingHorizontal: 8 }
-              : { paddingBottom: SPACING?.lg || 16, paddingHorizontal: 8 }
-          }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        />
-      )}
+        ) : filteredAppointments.length === 0 ? (
+          <Text style={styles.emptyText}>
+            No hay turnos {viewMode === 'active' ? 'activos' : 'archivados'} para
+            este día.
+          </Text>
+        ) : (
+          <ScrollView>
+            {filteredAppointments.map((appt) => (
+              <Card key={appt.id} style={styles.appointmentCard}>
+                <View style={styles.appointmentRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.apptClient}>
+                      {appt.clients?.name || 'Sin nombre'}
+                    </Text>
+                    <Text style={styles.apptService}>
+                      {appt.notes || 'Sin notas'}
+                    </Text>
+                    <Text style={styles.apptTime}>
+                      {appt.start_time?.slice(0, 5)} -{' '}
+                      {appt.end_time?.slice(0, 5)}
+                    </Text>
+                    <Text style={styles.apptStatus}>
+                      Estado: {appt.status}
+                    </Text>
+                  </View>
+
+                  <View style={styles.statusButtons}>
+                    {appt.status !== 'pending' && (
+                      <TouchableOpacity
+                        style={[styles.statusBtn, styles.statusPending]}
+                        onPress={() => handleStatusChange(appt.id, 'pending')}
+                      >
+                        <Text style={styles.statusBtnText}>Pendiente</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {appt.status !== 'confirmed' && (
+                      <TouchableOpacity
+                        style={[styles.statusBtn, styles.statusConfirmed]}
+                        onPress={() =>
+                          handleStatusChange(appt.id, 'confirmed')
+                        }
+                      >
+                        <Text style={styles.statusBtnText}>Confirmado</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {appt.status !== 'done' && (
+                      <TouchableOpacity
+                        style={[styles.statusBtn, styles.statusDone]}
+                        onPress={() => handleStatusChange(appt.id, 'done')}
+                      >
+                        <Text style={styles.statusBtnText}>Realizado</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </Card>
+            ))}
+          </ScrollView>
+        )}
+      </View>
     </View>
-  )
+  );
 }
 
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  summaryRow: {
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 16, backgroundColor: '#F5F6FA' },
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  summaryText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  summarySubText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  filterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  title: { fontSize: 22, fontWeight: '700', color: '#111827' },
+  subtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  newBtn: {
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    backgroundColor: '#FFFFFF',
   },
-  filterChipActive: {
-    backgroundColor: COLORS?.primary || '#3F51B5',
-    borderColor: COLORS?.primary || '#3F51B5',
+  newBtnText: { color: 'white', fontWeight: '600', fontSize: 13 },
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: '#E5E7EB',
+    borderRadius: 999,
+    padding: 4,
+    marginBottom: 10,
   },
-  filterChipText: {
-    fontSize: 12,
-    color: '#555',
-  },
-  filterChipTextActive: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  loadingContainer: {
-    marginTop: 16,
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 999,
     alignItems: 'center',
   },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  segmentBtnActive: {
+    backgroundColor: 'white',
+  },
+  segmentText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  segmentTextActive: {
+    color: '#111827',
+  },
+  archiveRow: { marginBottom: 8 },
+  archiveBtn: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E5E7EB',
+  },
+  archiveBtnActive: {
+    backgroundColor: '#4F46E5',
+  },
+  archiveBtnText: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  archiveBtnTextActive: {
+    color: 'white',
+  },
+  datePill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'white',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
     marginBottom: 8,
   },
-  timeColumn: {
-    width: 60,
-    alignItems: 'center',
-    paddingTop: 6,
-  },
-  timeText: {
+  datePillText: {
     fontSize: 14,
-    fontWeight: '600',
-  },
-  timeEndText: {
-    fontSize: 11,
-    color: '#666',
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 6,
-    marginBottom: 2,
-  },
-  verticalLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: '#E0E0E0',
-    marginTop: 2,
-  },
-  itemCard: {
-    flex: 1,
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  clientName: {
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
-    marginRight: 8,
-  },
-  serviceName: {
-    marginTop: 2,
-    fontSize: 13,
+    color: '#111827',
     fontWeight: '500',
   },
-  phoneText: {
-    marginTop: 2,
-    fontSize: 12,
-    color: '#777',
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    marginTop: 24,
-  },
+  listContainer: { flex: 1, marginTop: 8 },
   emptyText: {
+    textAlign: 'center',
+    marginTop: 32,
     fontSize: 14,
-    fontWeight: '500',
+    color: '#6B7280',
   },
-  emptySubText: {
+  appointmentCard: { marginBottom: 10 },
+  appointmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  apptClient: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  apptService: {
+    fontSize: 13,
+    color: '#4B5563',
+    marginTop: 2,
+  },
+  apptTime: {
     fontSize: 12,
-    color: '#666',
+    color: '#6B7280',
+    marginTop: 4,
   },
-})
+  apptStatus: {
+    fontSize: 12,
+    color: '#4B5563',
+    marginTop: 2,
+  },
+  statusButtons: { justifyContent: 'space-between' },
+  statusBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 4,
+  },
+  statusBtnText: { fontSize: 11, fontWeight: '600', color: 'white' },
+  statusPending: { backgroundColor: '#F59E0B' },
+  statusConfirmed: { backgroundColor: '#10B981' },
+  statusDone: { backgroundColor: '#6B7280' },
+});

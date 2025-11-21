@@ -1,255 +1,273 @@
 // app/clients/index.js
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
-  View,
-  Text,
-  StyleSheet,
   ActivityIndicator,
   FlatList,
-  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
   TouchableOpacity,
+  View,
   Linking,
-  Alert,
 } from 'react-native'
-import { useRouter, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import Screen from '../../components/ui/Screen'
-import SectionTitle from '../../components/ui/SectionTitle'
-import Spacer from '../../components/ui/Spacer'
-import Card from '../../components/ui/Card'
+import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 
 export default function ClientsScreen() {
   const router = useRouter()
-  const [clients, setClients] = useState([])
+
   const [loading, setLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+  const [clients, setClients] = useState([])
+  const [search, setSearch] = useState('')
 
-  const loadClients = async () => {
+  const loadClients = useCallback(async () => {
     setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error cargando clientes', error)
-      Alert.alert('Error', 'No se pudieron cargar los clientes.')
-      setClients([])
-    } else {
-      setClients(data || [])
+      if (error) {
+        console.error('Error cargando clientes', error)
+      } else {
+        setClients(data || [])
+      }
+    } catch (e) {
+      console.error('Error inesperado cargando clientes', e)
+    } finally {
+      setLoading(false)
     }
+  }, [])
 
-    setLoading(false)
+  useEffect(() => {
+    loadClients()
+  }, [loadClients])
+
+  const filteredClients = clients.filter((c) => {
+    if (!search.trim()) return true
+    const term = search.toLowerCase()
+    return (
+      (c.name || '').toLowerCase().includes(term) ||
+      (c.phone || '').toLowerCase().includes(term) ||
+      (c.instagram || '').toLowerCase().includes(term)
+    )
+  })
+
+  const handleNewClient = () => {
+    router.push('/clients/new')
   }
 
-  useFocusEffect(
-    useCallback(() => {
-      loadClients()
-    }, [])
+  const handlePressClient = (client) => {
+    router.push(`/clients/${client.id}`)
+  }
+
+  const openWhatsApp = (client) => {
+    if (!client.phone) return
+    const msg = `Hola ${client.name || ''}, ¿cómo estás?`
+    const url = `https://wa.me/${client.phone}?text=${encodeURIComponent(msg)}`
+    Linking.openURL(url)
+  }
+
+  const openInstagram = (client) => {
+    if (!client.instagram) return
+    const handle = client.instagram.replace('@', '').trim()
+    const url = `https://instagram.com/${handle}`
+    Linking.openURL(url)
+  }
+
+  const renderClientItem = ({ item }) => (
+    <View style={styles.clientRow}>
+      <TouchableOpacity
+        style={styles.clientInfo}
+        onPress={() => handlePressClient(item)}
+      >
+        <Text style={styles.clientName} numberOfLines={1}>
+          {item.name || 'Sin nombre'}
+        </Text>
+
+        {!!item.phone && (
+          <Text style={styles.clientMeta} numberOfLines={1}>
+            {item.phone}
+          </Text>
+        )}
+
+        {!!item.instagram && (
+          <Text style={styles.clientMeta} numberOfLines={1}>
+            @{item.instagram.replace('@', '')}
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      <View style={styles.actions}>
+        {!!item.phone && (
+          <TouchableOpacity
+            onPress={() => openWhatsApp(item)}
+            style={styles.iconButton}
+          >
+            <Ionicons name="logo-whatsapp" size={20} color="#22c55e" />
+          </TouchableOpacity>
+        )}
+
+        {!!item.instagram && (
+          <TouchableOpacity
+            onPress={() => openInstagram(item)}
+            style={styles.iconButton}
+          >
+            <Ionicons name="logo-instagram" size={20} color="#ec4899" />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
   )
 
-  const onRefresh = async () => {
-    setRefreshing(true)
-    await loadClients()
-    setRefreshing(false)
-  }
+  const ListHeader = () => (
+    <View>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={styles.title}>Clientes</Text>
+          <Text style={styles.subtitle}>
+            {clients.length} cliente{clients.length === 1 ? '' : 's'}
+          </Text>
+        </View>
 
-  const handleWhatsApp = (client) => {
-    if (!client?.phone) {
-      Alert.alert('Sin teléfono', 'Este cliente no tiene teléfono cargado.')
-      return
-    }
+        <TouchableOpacity onPress={handleNewClient} style={styles.newButton}>
+          <Text style={styles.newButtonText}>+ Nuevo</Text>
+        </TouchableOpacity>
+      </View>
 
-    const clean = client.phone.replace(/\D/g, '')
-    if (!clean) {
-      Alert.alert('Teléfono inválido', 'El teléfono guardado no parece válido.')
-      return
-    }
+      <View style={styles.searchContainer}>
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Buscar por nombre, teléfono o Instagram"
+          placeholderTextColor="#9ca3af"
+          style={styles.searchInput}
+        />
+      </View>
+    </View>
+  )
 
-    const url = `https://wa.me/${clean}`
-
-    Linking.openURL(url).catch((err) => {
-      console.error('Error abriendo WhatsApp', err)
-      Alert.alert('Error', 'No se pudo abrir WhatsApp.')
-    })
-  }
-
-  const handleInstagram = (client) => {
-    if (!client?.instagram) {
-      Alert.alert('Sin Instagram', 'Este cliente no tiene Instagram cargado.')
-      return
-    }
-
-    const username = client.instagram.replace('@', '').trim()
-    if (!username) {
-      Alert.alert('Instagram inválido', 'El usuario de Instagram no es válido.')
-      return
-    }
-
-    const url = `https://instagram.com/${username}`
-
-    Linking.openURL(url).catch((err) => {
-      console.error('Error abriendo Instagram', err)
-      Alert.alert('Error', 'No se pudo abrir Instagram.')
-    })
-  }
-
-  const renderItem = ({ item }) => {
-    const hasPhone = !!item.phone
-    const hasInstagram = !!item.instagram
-
+  if (loading && clients.length === 0) {
     return (
-      <TouchableOpacity
-        onPress={() => router.push(`/clients/${item.id}`)}
-        style={{ marginBottom: 10 }}
-        activeOpacity={0.8}
-      >
-        <Card>
-          <View style={styles.row}>
-            {/* Izquierda: datos del cliente */}
-            <View style={styles.info}>
-              <Text style={styles.name}>{item.name}</Text>
-
-              {item.phone ? (
-                <Text style={styles.phone}>{item.phone}</Text>
-              ) : (
-                <Text style={styles.muted}>Sin teléfono</Text>
-              )}
-
-              {item.notes ? (
-                <>
-                  <Spacer size={4} />
-                  <Text style={styles.notes} numberOfLines={2}>
-                    {item.notes}
-                  </Text>
-                </>
-              ) : null}
-            </View>
-
-            {/* Derecha: iconos de acción */}
-            <View style={styles.actions}>
-              <TouchableOpacity
-                onPress={() => handleWhatsApp(item)}
-                disabled={!hasPhone}
-                style={[
-                  styles.iconButton,
-                  !hasPhone && styles.iconDisabled,
-                ]}
-              >
-                <Ionicons
-                  name="logo-whatsapp"
-                  size={22}
-                  color={hasPhone ? '#25D366' : '#B0BEC5'}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => handleInstagram(item)}
-                disabled={!hasInstagram}
-                style={[
-                  styles.iconButton,
-                  !hasInstagram && styles.iconDisabled,
-                ]}
-              >
-                <Ionicons
-                  name="logo-instagram"
-                  size={22}
-                  color={hasInstagram ? '#E1306C' : '#B0BEC5'}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Card>
-      </TouchableOpacity>
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#3F51B5" />
+      </View>
     )
   }
 
   return (
-    // 👇 IMPORTANTE: scroll={false} para que Screen NO meta un ScrollView
-    <Screen scroll={false}>
-      <SectionTitle
-        right={
-          <TouchableOpacity onPress={() => router.push('/clients/new')}>
-            <Text style={styles.newBtnText}>+ Nuevo</Text>
-          </TouchableOpacity>
+    <View style={styles.container}>
+      <FlatList
+        data={filteredClients}
+        keyExtractor={(item) => item.id}
+        renderItem={renderClientItem}
+        ListHeaderComponent={ListHeader}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          !loading && (
+            <Text style={styles.emptyText}>
+              No hay clientes cargados todavía.
+            </Text>
+          )
         }
-      >
-        Clientes
-      </SectionTitle>
-
-      <Spacer />
-
-      {loading && clients.length === 0 ? (
-        <>
-          <ActivityIndicator />
-          <Spacer />
-          <Text>Cargando clientes...</Text>
-        </>
-      ) : clients.length === 0 ? (
-        <Text>No hay clientes cargados todavía.</Text>
-      ) : (
-        <FlatList
-          data={clients}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#3F51B5"
-            />
-          }
-        />
-      )}
-    </Screen>
+      />
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  info: {
+  container: {
     flex: 1,
-    paddingRight: 8,
+    backgroundColor: '#F3F4F6', // fondo claro
   },
-  name: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#212121',
-    marginBottom: 2,
+  listContent: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 16,
   },
-  phone: {
-    fontSize: 13,
-    color: '#424242',
+  loader: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
   },
-  muted: {
-    fontSize: 13,
-    color: '#9E9E9E',
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  notes: {
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  subtitle: {
     fontSize: 12,
-    color: '#616161',
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  newButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#3F51B5',
+  },
+  newButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  searchContainer: {
+    marginBottom: 12,
+  },
+  searchInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    color: '#111827',
+    fontSize: 13,
+  },
+  clientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  clientInfo: {
+    flex: 1,
+  },
+  clientName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  clientMeta: {
+    fontSize: 12,
+    color: '#6b7280',
   },
   actions: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
+    flexDirection: 'row',
+    marginLeft: 8,
   },
   iconButton: {
     padding: 6,
     borderRadius: 999,
-    backgroundColor: '#ECEFF1',
+    backgroundColor: '#FFFFFF',
+    marginLeft: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  iconDisabled: {
-    opacity: 0.5,
-  },
-  newBtnText: {
-    color: '#3F51B5',
-    fontWeight: '600',
-    fontSize: 14,
+  emptyText: {
+    fontSize: 13,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 40,
   },
 })

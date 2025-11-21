@@ -1,377 +1,397 @@
-import React, { useEffect, useMemo, useState } from 'react'
+// app/agenda/views/AgendaWeek.js
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ActivityIndicator,
-  FlatList,
-  TouchableOpacity,
   ScrollView,
-} from 'react-native'
-import { useRouter } from 'expo-router'
-import Card from '../../../components/ui/Card'
-import Spacer from '../../../components/ui/Spacer'
-import { supabase } from '../../../lib/supabase'
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
+import {
+  startOfWeek,
+  addDays,
+  format,
+  isSameDay,
+} from 'date-fns';
+import { es } from 'date-fns/locale';
+import Card from '../../../components/ui/Card';
+import { supabase } from '../../../lib/supabase';
 
-function formatTime(t) {
-  if (!t) return ''
-  return t.slice(0, 5)
-}
-
-function getStatusColor(status) {
-  switch (status) {
-    case 'confirmed':
-      return '#0277BD'
-    case 'done':
-      return '#2E7D32'
-    case 'cancelled':
-      return '#E53935'
-    default:
-      return '#FF8F00' // pending
-  }
-}
-
-function getStatusLabel(status) {
-  switch (status) {
-    case 'confirmed':
-      return 'Confirmado'
-    case 'done':
-      return 'Realizado'
-    case 'cancelled':
-      return 'Cancelado'
-    default:
-      return 'Pendiente'
-  }
-}
-
-// Devuelve YYYY-MM-DD
-function toISODate(d) {
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
-// Devuelve el lunes de la semana del día dado
-function getWeekStart(dateObj) {
-  const d = new Date(dateObj) // copia
-  const day = d.getDay() // 0 = domingo, 1 = lunes...
-  const diff = (day === 0 ? -6 : 1 - day) // queremos lunes
-  d.setDate(d.getDate() + diff)
-  return d
-}
-
-// Array de 7 días (Date) a partir del lunes
-function buildWeekDays(baseDate) {
-  const start = getWeekStart(baseDate)
-  const days = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start)
-    d.setDate(start.getDate() + i)
-    days.push(d)
-  }
-  return days
-}
-
-const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
+const ACTIVE_STATUSES = ['pending', 'confirmed'];
 
 export default function AgendaWeek() {
-  const router = useRouter()
-  const today = new Date()
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const [weekBaseDate, setWeekBaseDate] = useState(today)
-  const [selectedDateISO, setSelectedDateISO] = useState(toISODate(today))
-  const [loading, setLoading] = useState(false)
-  const [appointments, setAppointments] = useState([])
+  const weekDays = useMemo(() => {
+    const start = startOfWeek(currentDate, { weekStartsOn: 1 }); // lunes
+    return Array.from({ length: 7 }).map((_, index) => addDays(start, index));
+  }, [currentDate]);
 
-  // Días de la semana (Date[])
-  const weekDays = useMemo(
-    () => buildWeekDays(weekBaseDate),
-    [weekBaseDate]
-  )
+  const filteredAppointments = useMemo(() => {
+    return appointments.filter((appt) => {
+      const apptDate = new Date(appt.date);
+      return (
+        isSameDay(apptDate, selectedDate) &&
+        ACTIVE_STATUSES.includes(appt.status)
+      );
+    });
+  }, [appointments, selectedDate]);
 
-  const weekStartISO = toISODate(weekDays[0])
-  const weekEndISO = toISODate(weekDays[6])
+  const fetchWeekAppointments = useCallback(async () => {
+    try {
+      setLoading(true);
+      const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const end = addDays(start, 6);
 
-  const loadAppointments = async () => {
-    setLoading(true)
-
-    const { data, error } = await supabase
-      .from('appointments')
-      .select(`
-        id,
-        date,
-        start_time,
-        end_time,
-        status,
-        service_name,
-        clients (
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(
+          `
           id,
-          name,
-          phone
+          date,
+          start_time,
+          end_time,
+          status,
+          notes,
+          clients (
+            id,
+            name,
+            phone,
+            instagram
+          )
+        `,
         )
-      `)
-      .gte('date', weekStartISO)
-      .lte('date', weekEndISO)
-      .order('date', { ascending: true })
-      .order('start_time', { ascending: true })
+        .gte('date', format(start, 'yyyy-MM-dd'))
+        .lte('date', format(end, 'yyyy-MM-dd'))
+        .order('date', { ascending: true })
+        .order('start_time', { ascending: true });
 
-    if (error) {
-      console.error('Error cargando turnos de la semana', error)
-      setAppointments([])
-      setLoading(false)
-      return
+      if (error) {
+        console.log('Error cargando turnos semana:', error.message);
+        return;
+      }
+
+      setAppointments(
+        (data || []).map((d) => ({
+          ...d,
+          date: d.date,
+        })),
+      );
+    } catch (e) {
+      console.log('Error inesperado:', e);
+    } finally {
+      setLoading(false);
     }
-
-    setAppointments(data || [])
-    setLoading(false)
-  }
+  }, [currentDate]);
 
   useEffect(() => {
-    loadAppointments()
-  }, [weekStartISO, weekEndISO])
+    fetchWeekAppointments();
+  }, [fetchWeekAppointments]);
 
-  // Agrupar turnos por fecha YYYY-MM-DD
-  const appointmentsByDate = useMemo(() => {
-    const map = {}
-    for (const appt of appointments) {
-      const key = appt.date
-      if (!map[key]) map[key] = []
-      map[key].push(appt)
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: newStatus })
+        .eq('id', id);
+
+      if (error) {
+        console.log('Error actualizando estado:', error.message);
+        return;
+      }
+
+      setAppointments((prev) =>
+        prev.map((appt) =>
+          appt.id === id ? { ...appt, status: newStatus } : appt,
+        ),
+      );
+    } catch (e) {
+      console.log('Error inesperado al cambiar estado:', e);
     }
-    return map
-  }, [appointments])
+  };
 
-  // Turnos del día seleccionado
-  const selectedAppointments = appointmentsByDate[selectedDateISO] || []
+  const countDayAppointments = (day) => {
+    return appointments.filter((appt) => {
+      const apptDate = new Date(appt.date);
+      return (
+        isSameDay(apptDate, day) && ACTIVE_STATUSES.includes(appt.status)
+      );
+    }).length;
+  };
 
-  const handleDayPress = (dateISO) => {
-    setSelectedDateISO(dateISO)
-  }
+  const goToPrevWeek = () => {
+    setCurrentDate((prev) => addDays(prev, -7));
+    setSelectedDate((prev) => addDays(prev, -7));
+  };
 
-  const handlePrevWeek = () => {
-    const d = new Date(weekBaseDate)
-    d.setDate(d.getDate() - 7)
-    setWeekBaseDate(d)
-    setSelectedDateISO(toISODate(d)) // por defecto, lunes de la nueva semana
-  }
-
-  const handleNextWeek = () => {
-    const d = new Date(weekBaseDate)
-    d.setDate(d.getDate() + 7)
-    setWeekBaseDate(d)
-    setSelectedDateISO(toISODate(d))
-  }
-
-  const renderDayChip = (dateObj, index) => {
-    const iso = toISODate(dateObj)
-    const dayNum = dateObj.getDate()
-    const weekdayLabel = WEEKDAY_LABELS[index] // L M M J V S D
-    const count = (appointmentsByDate[iso] || []).length
-    const isSelected = iso === selectedDateISO
-
-    return (
-      <TouchableOpacity
-        key={iso}
-        style={[
-          styles.dayChip,
-          isSelected && styles.dayChipSelected,
-        ]}
-        onPress={() => handleDayPress(iso)}
-      >
-        <Text
-          style={[
-            styles.dayChipWeekday,
-            isSelected && styles.dayChipWeekdaySelected,
-          ]}
-        >
-          {weekdayLabel}
-        </Text>
-        <Text
-          style={[
-            styles.dayChipDayNum,
-            isSelected && styles.dayChipDayNumSelected,
-          ]}
-        >
-          {dayNum}
-        </Text>
-        <Text
-          style={[
-            styles.dayChipCount,
-            isSelected && styles.dayChipCountSelected,
-          ]}
-        >
-          {count > 0 ? `${count} turno${count > 1 ? 's' : ''}` : '—'}
-        </Text>
-      </TouchableOpacity>
-    )
-  }
-
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => router.push(`/appointments/${item.id}`)}
-      style={{ marginBottom: 10 }}
-    >
-      <Card style={styles.card}>
-        <View style={styles.timeRow}>
-          <Text style={styles.timeText}>
-            {formatTime(item.start_time)}
-            {item.end_time ? ` - ${formatTime(item.end_time)}` : ''}
-          </Text>
-
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(item.status) },
-            ]}
-          >
-            <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
-          </View>
-        </View>
-
-        <Spacer size={6} />
-
-        <Text style={styles.clientText}>
-          {item.clients?.name || 'Cliente sin nombre'}
-        </Text>
-
-        <Spacer size={2} />
-
-        <Text style={styles.serviceText}>{item.service_name}</Text>
-      </Card>
-    </TouchableOpacity>
-  )
+  const goToNextWeek = () => {
+    setCurrentDate((prev) => addDays(prev, 7));
+    setSelectedDate((prev) => addDays(prev, 7));
+  };
 
   return (
     <View style={styles.container}>
       {/* Navegación de semana */}
-      <View style={styles.weekHeader}>
-        <TouchableOpacity onPress={handlePrevWeek}>
+      <View style={styles.weekNav}>
+        <TouchableOpacity onPress={goToPrevWeek}>
           <Text style={styles.weekNavText}>{'< Semana anterior'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleNextWeek}>
+        <TouchableOpacity onPress={goToNextWeek}>
           <Text style={styles.weekNavText}>{'Semana siguiente >'}</Text>
         </TouchableOpacity>
       </View>
 
-      <Spacer size={8} />
-
-      {/* Chips horizontales de días */}
+      {/* Días de la semana */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.daysRow}
+        contentContainerStyle={styles.weekDaysRow}
       >
-        {weekDays.map((d, index) => renderDayChip(d, index))}
+        {weekDays.map((day) => {
+          const isSelected = isSameDay(day, selectedDate);
+          const isToday = isSameDay(day, new Date());
+          const count = countDayAppointments(day);
+
+          return (
+            <TouchableOpacity
+              key={day.toISOString()}
+              onPress={() => setSelectedDate(day)}
+              style={[
+                styles.dayContainer,
+                isSelected && styles.dayContainerSelected,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.dayLabel,
+                  isSelected && styles.dayLabelSelected,
+                ]}
+              >
+                {format(day, 'EEE', { locale: es }).charAt(0).toUpperCase()}
+              </Text>
+              <Text
+                style={[
+                  styles.dayNumber,
+                  isSelected && styles.dayNumberSelected,
+                ]}
+              >
+                {format(day, 'd')}
+              </Text>
+
+              {count > 0 ? (
+                <Text
+                  style={[
+                    styles.turnsCount,
+                    isSelected && styles.turnsCountSelected,
+                  ]}
+                >
+                  {count} turno{count > 1 ? 's' : ''}
+                </Text>
+              ) : (
+                <Text
+                  style={[
+                    styles.turnsCount,
+                    isSelected && styles.turnsCountSelected,
+                  ]}
+                >
+                  —
+                </Text>
+              )}
+
+              {isToday && !isSelected && <View style={styles.todayDot} />}
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
-      <Spacer size={12} />
-
-      {/* Turnos del día seleccionado */}
-      {loading ? (
-        <>
+      {/* Lista de turnos del día seleccionado */}
+      <View style={styles.listContainer}>
+        {loading ? (
           <ActivityIndicator />
-          <Spacer />
-          <Text>Cargando turnos...</Text>
-        </>
-      ) : selectedAppointments.length === 0 ? (
-        <Text style={styles.noAppts}>No hay turnos para este día.</Text>
-      ) : (
-        <FlatList
-          data={selectedAppointments}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 60 }}
-        />
-      )}
+        ) : filteredAppointments.length === 0 ? (
+          <Text style={styles.emptyText}>
+            No hay turnos activos para este día.
+          </Text>
+        ) : (
+          <ScrollView>
+            {filteredAppointments.map((appt) => (
+              <Card key={appt.id} style={styles.appointmentCard}>
+                <View style={styles.appointmentRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.apptClient}>
+                      {appt.clients?.name || 'Sin nombre'}
+                    </Text>
+                    <Text style={styles.apptService}>
+                      {appt.notes || 'Sin notas'}
+                    </Text>
+                    <Text style={styles.apptTime}>
+                      {appt.start_time?.slice(0, 5)} -{' '}
+                      {appt.end_time?.slice(0, 5)}
+                    </Text>
+                    <Text style={styles.apptStatus}>
+                      Estado: {appt.status}
+                    </Text>
+                  </View>
+
+                  {/* Botones rápidos de estado */}
+                  <View style={styles.statusButtons}>
+                    {appt.status !== 'pending' && (
+                      <TouchableOpacity
+                        style={[styles.statusBtn, styles.statusPending]}
+                        onPress={() => handleStatusChange(appt.id, 'pending')}
+                      >
+                        <Text style={styles.statusBtnText}>Pendiente</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {appt.status !== 'confirmed' && (
+                      <TouchableOpacity
+                        style={[styles.statusBtn, styles.statusConfirmed]}
+                        onPress={() =>
+                          handleStatusChange(appt.id, 'confirmed')
+                        }
+                      >
+                        <Text style={styles.statusBtnText}>Confirmado</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {appt.status !== 'done' && (
+                      <TouchableOpacity
+                        style={[styles.statusBtn, styles.statusDone]}
+                        onPress={() => handleStatusChange(appt.id, 'done')}
+                      >
+                        <Text style={styles.statusBtnText}>Realizado</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </Card>
+            ))}
+          </ScrollView>
+        )}
+      </View>
     </View>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 8,
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 5,
+    backgroundColor: '#F5F6FA',
   },
-  weekHeader: {
+  weekNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 1,      // antes 6
   },
-  weekNavText: {
-    fontSize: 13,
-    color: '#3F51B5',
-    fontWeight: '500',
-  },
-  daysRow: {
-    paddingVertical: 4,
-  },
-  dayChip: {
-    width: 90,
-    marginRight: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    backgroundColor: '#ECEFF1',
+  weekNavText: { fontSize: 12, color: '#4F46E5', fontWeight: '500' },
+  weekDaysRow: {
+    // paddingVertical: 8,
+    paddingVertical: 0,   // sin aire extra debajo del calendario
     alignItems: 'center',
   },
-  dayChipSelected: {
-    backgroundColor: '#3F51B5',
+  dayContainer: {
+    width: 55,
+    height: 160,             // más angosto
+    paddingVertical: 2,    // más bajo
+    borderRadius: 12,      // más compacto
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 3,
+    backgroundColor: '#E5E7EB',
   },
-  dayChipWeekday: {
+  dayContainerSelected: {
+    backgroundColor: '#4F46E5',
+  },
+  dayLabel: {
     fontSize: 12,
-    color: '#546E7A',
+    color: '#6B7280',
+    marginBottom: 4,
   },
-  dayChipWeekdaySelected: {
-    color: '#CFD8DC',
+  dayLabelSelected: {
+    color: 'white',
   },
-  dayChipDayNum: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#263238',
-  },
-  dayChipDayNumSelected: {
-    color: '#FFFFFF',
-  },
-  dayChipCount: {
-    marginTop: 2,
-    fontSize: 11,
-    color: '#78909C',
-  },
-  dayChipCountSelected: {
-    color: '#ECEFF1',
-  },
-  card: {
-    padding: 14,
-    borderRadius: 12,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  timeText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#212121',
-  },
-  clientText: {
-    fontSize: 15,
+  dayNumber: {
+    fontSize: 20,
     fontWeight: '600',
-    color: '#3E3E3E',
+    color: '#111827',
   },
-  serviceText: {
-    fontSize: 13,
-    color: '#616161',
+  dayNumberSelected: {
+    color: 'white',
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+  turnsCount: {
+    marginTop: 6,
+    fontSize: 11,
+    color: '#6B7280',
   },
-  statusText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 12,
+  turnsCountSelected: {
+    color: '#E5E7EB',
   },
-  noAppts: {
+  todayDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: '#F59E0B',
+    marginTop: 4,
+  },
+  listContainer: {
+      flex: 1,
+    marginTop: 4,
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 32,
     fontSize: 14,
-    color: '#757575',
+    color: '#6B7280',
   },
-})
+  appointmentCard: {
+    marginBottom: 10,
+  },
+  appointmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  apptClient: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  apptService: {
+    fontSize: 13,
+    color: '#4B5563',
+    marginTop: 2,
+  },
+  apptTime: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  apptStatus: {
+    fontSize: 12,
+    color: '#4B5563',
+    marginTop: 2,
+  },
+  statusButtons: {
+    justifyContent: 'space-between',
+  },
+  statusBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 4,
+  },
+  statusBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'white',
+  },
+  statusPending: { backgroundColor: '#F59E0B' },
+  statusConfirmed: { backgroundColor: '#10B981' },
+  statusDone: { backgroundColor: '#6B7280' },
+});

@@ -1,181 +1,173 @@
 // app/agenda/index.js
 import React, { useState } from 'react'
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native'
-import Screen from '../../components/ui/Screen'
-import SectionTitle from '../../components/ui/SectionTitle'
-import Spacer from '../../components/ui/Spacer'
-import Card from '../../components/ui/Card'
-import { COLORS, RADIUS } from '../../components/theme'
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { useRouter } from 'expo-router'
 
 import AgendaDay from './views/AgendaDay'
 import AgendaWeek from './views/AgendaWeek'
 import AgendaMonth from './views/AgendaMonth'
 
-function formatHeaderDate(date, mode) {
-  const optionsBase = {
-    day: 'numeric',
-    month: 'short',
-  }
-
-  if (mode === 'day') {
-    return date.toLocaleDateString('es-AR', {
-      ...optionsBase,
-      weekday: 'long',
-    })
-  }
-
-  if (mode === 'week') {
-    // Semana: mostramos rango simple (inicio - fin)
-    const start = new Date(date)
-    const end = new Date(date)
-    // Suponemos que la semana empieza el lunes
-    const day = start.getDay() === 0 ? 7 : start.getDay()
-    start.setDate(start.getDate() - (day - 1))
-    end.setDate(start.getDate() + 6)
-
-    const startStr = start.toLocaleDateString('es-AR', optionsBase)
-    const endStr = end.toLocaleDateString('es-AR', optionsBase)
-
-    return `Semana del ${startStr} al ${endStr}`
-  }
-
-  // Mes
-  return date.toLocaleDateString('es-AR', {
-    month: 'long',
-    year: 'numeric',
-  })
-}
+const VIEWS = [
+  { key: 'day', label: 'Día' },
+  { key: 'week', label: 'Semana' },
+  { key: 'month', label: 'Mes' },
+]
 
 export default function AgendaScreen() {
-  const [tab, setTab] = useState('day') // 'day' | 'week' | 'month'
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const router = useRouter()
 
-  const changeTab = (value) => {
-    setTab(value)
+  const [view, setView] = useState('week') // por defecto Semana
+  const [showArchived, setShowArchived] = useState(false)
+
+  const handleNewAppointment = () => {
+    // Flujo: Agenda -> seleccionar cliente -> /appointments/new?clientId=...
+    router.push('/clients/select')
   }
 
-  const moveDate = (direction) => {
-    // direction: -1 o 1
-    const d = new Date(currentDate)
-
-    if (tab === 'day') {
-      d.setDate(d.getDate() + direction)
-    } else if (tab === 'week') {
-      d.setDate(d.getDate() + 7 * direction)
-    } else if (tab === 'month') {
-      d.setMonth(d.getMonth() + direction)
-    }
-
-    setCurrentDate(d)
-  }
+  const currentViewLabel =
+    VIEWS.find((v) => v.key === view)?.label || 'Semana'
 
   return (
-    <Screen>
-      <SectionTitle>Agenda</SectionTitle>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Agenda</Text>
+          <Text style={styles.subtitle}>
+            Vista: {currentViewLabel} · {showArchived ? 'Archivados' : 'Activos'}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleNewAppointment}
+          style={styles.newButton}
+        >
+          <Text style={styles.newButtonText}>+ Nuevo turno</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Tabs Día / Semana / Mes */}
       <View style={styles.tabsRow}>
-        {['day', 'week', 'month'].map((value) => {
-          const labels = {
-            day: 'Día',
-            week: 'Semana',
-            month: 'Mes',
-          }
-          const isActive = tab === value
+        {VIEWS.map((v) => {
+          const isActive = v.key === view
           return (
             <TouchableOpacity
-              key={value}
+              key={v.key}
               style={[styles.tab, isActive && styles.tabActive]}
-              onPress={() => changeTab(value)}
+              onPress={() => setView(v.key)}
             >
-              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                {labels[value]}
+              <Text
+                style={[
+                  styles.tabLabel,
+                  isActive && styles.tabLabelActive,
+                ]}
+              >
+                {v.label}
               </Text>
             </TouchableOpacity>
           )
         })}
       </View>
 
-      <Spacer size={8} />
+      {/* Filtro activos / archivados */}
+      <View style={styles.filtersRow}>
+        <TouchableOpacity
+          onPress={() => setShowArchived((prev) => !prev)}
+          style={styles.filterChip}
+        >
+          <Text style={styles.filterChipText}>
+            {showArchived ? 'Ver activos' : 'Ver archivados'}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* Header con fecha + flechas */}
-      <Card>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => moveDate(-1)} style={styles.arrowBtn}>
-            <Text style={styles.arrowText}>{'‹'}</Text>
-          </TouchableOpacity>
-
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerDateText}>
-              {formatHeaderDate(currentDate, tab)}
-            </Text>
-          </View>
-
-          <TouchableOpacity onPress={() => moveDate(1)} style={styles.arrowBtn}>
-            <Text style={styles.arrowText}>{'›'}</Text>
-          </TouchableOpacity>
-        </View>
-      </Card>
-
-      <Spacer size={12} />
-
-      {/* Contenido según tab */}
-      {tab === 'day' && <AgendaDay date={currentDate} />}
-      {tab === 'week' && <AgendaWeek date={currentDate} />}
-      {tab === 'month' && <AgendaMonth date={currentDate} />}
-    </Screen>
+      {/* Contenido de la vista */}
+      <View style={styles.content}>
+        {view === 'day' && <AgendaDay showArchived={showArchived} />}
+        {view === 'week' && <AgendaWeek showArchived={showArchived} />}
+        {view === 'month' && <AgendaMonth showArchived={showArchived} />}
+      </View>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FAFAFA',
+    paddingTop: 16,
+  },
+  header: {
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#212121',
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 2,
+  },
+  newButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#3F51B5',
+  },
+  newButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   tabsRow: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: RADIUS?.lg || 12,
-    padding: 3,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+    gap: 6,
   },
   tab: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#E0E0E0',
     alignItems: 'center',
-    borderRadius: RADIUS?.md || 8,
   },
   tabActive: {
-    backgroundColor: COLORS?.primary || '#3F51B5',
+    backgroundColor: '#3F51B5',
   },
-  tabText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+  tabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#424242',
   },
-  tabTextActive: {
-    color: '#FFF',
+  tabLabelActive: {
+    color: '#FFFFFF',
   },
-  headerRow: {
+  filtersRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    paddingHorizontal: 12,
+    marginBottom: 4,
   },
-  arrowBtn: {
-    paddingVertical: 6,
+  filterChip: {
     paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#EEEEEE',
   },
-  arrowText: {
-    fontSize: 22,
+  filterChipText: {
+    fontSize: 12,
     fontWeight: '600',
-    color: COLORS?.primary || '#3F51B5',
+    color: '#424242',
   },
-  headerCenter: {
+  content: {
     flex: 1,
-    alignItems: 'center',
-  },
-  headerDateText: {
-    fontSize: 16,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    paddingHorizontal: 8,
+    paddingTop: 4,
   },
 })
