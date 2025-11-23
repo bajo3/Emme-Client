@@ -32,10 +32,11 @@ export default function AgendaWeek() {
   }, [currentDate]);
 
   const filteredAppointments = useMemo(() => {
+    const selectedStr = format(selectedDate, 'yyyy-MM-dd');
+
     return appointments.filter((appt) => {
-      const apptDate = new Date(appt.date);
       return (
-        isSameDay(apptDate, selectedDate) &&
+        appt.date === selectedStr &&
         ACTIVE_STATUSES.includes(appt.status)
       );
     });
@@ -115,14 +116,15 @@ export default function AgendaWeek() {
   };
 
   const countDayAppointments = (day) => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+
     return appointments.filter((appt) => {
-      const apptDate = new Date(appt.date);
       return (
-        isSameDay(apptDate, day) && ACTIVE_STATUSES.includes(appt.status)
+        appt.date === dayStr &&
+        ACTIVE_STATUSES.includes(appt.status)
       );
     }).length;
   };
-
   const goToPrevWeek = () => {
     setCurrentDate((prev) => addDays(prev, -7));
     setSelectedDate((prev) => addDays(prev, -7));
@@ -282,25 +284,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 5,
+    paddingTop: 0, // antes 5
     backgroundColor: '#F5F6FA',
   },
   weekNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 1,      // antes 6
+    marginBottom: 4, // un poco de aire pero poco
   },
-  weekNavText: { fontSize: 12, color: '#4F46E5', fontWeight: '500' },
+  weekNavText: {
+    fontSize: 12,
+    color: '#4F46E5',
+    fontWeight: '500',
+  },
   weekDaysRow: {
-    // paddingVertical: 8,
-    paddingVertical: 0,   // sin aire extra debajo del calendario
+    paddingVertical: 2,     // antes 0
     alignItems: 'center',
   },
   dayContainer: {
     width: 55,
-    height: 160,             // más angosto
-    paddingVertical: 2,    // más bajo
-    borderRadius: 12,      // más compacto
+    height: 110,            // antes 160 → menos espacio en blanco
+    paddingVertical: 2,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 3,
@@ -341,12 +346,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   listContainer: {
-      flex: 1,
-    marginTop: 4,
+    flex: 1,
+    marginTop: 2,           // antes 4 → sube la lista
   },
   emptyText: {
     textAlign: 'center',
-    marginTop: 32,
+    marginTop: 12,          // antes 32 → menos vacío
     fontSize: 14,
     color: '#6B7280',
   },

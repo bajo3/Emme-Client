@@ -52,9 +52,10 @@ export default function AgendaMonth() {
     const statuses =
       viewMode === 'active' ? ACTIVE_STATUSES : ARCHIVED_STATUSES;
 
+    const selectedStr = format(selectedDate, 'yyyy-MM-dd');
+
     return appointments.filter((appt) => {
-      const apptDate = new Date(appt.date);
-      return isSameDay(apptDate, selectedDate) && statuses.includes(appt.status);
+      return appt.date === selectedStr && statuses.includes(appt.status);
     });
   }, [appointments, selectedDate, viewMode]);
 
@@ -110,9 +111,11 @@ export default function AgendaMonth() {
   const countDayAppointments = (day) => {
     const statuses =
       viewMode === 'active' ? ACTIVE_STATUSES : ARCHIVED_STATUSES;
+
+    const dayStr = format(day, 'yyyy-MM-dd');
+
     return appointments.filter((appt) => {
-      const apptDate = new Date(appt.date);
-      return isSameDay(apptDate, day) && statuses.includes(appt.status);
+      return appt.date === dayStr && statuses.includes(appt.status);
     }).length;
   };
 
@@ -155,7 +158,7 @@ export default function AgendaMonth() {
       <View style={styles.calendarContainer}>
         {/* Cabecera L M X J V S D */}
         <View style={styles.weekHeaderRow}>
-          {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((label) => (
+          {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((label) => (
             <Text key={label} style={styles.weekHeaderCell}>
               {label}
             </Text>
